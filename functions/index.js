@@ -8,7 +8,13 @@ admin.initializeApp(functions.config().firebase);
 const moment = require('moment');
 
 const dateFormat = "YYYY/MM/DD HH:mm";
+const flexibleHourDiff = 2;
 
+
+
+/*
+Sends notification to user which reservation that he published was picked
+*/
 exports.notifyOnPickedReservation = functions.database.ref('/users/{uid}/pickedReservations/{pushId}')
     .onCreate(event => {
         const reservation = event.data.val();
@@ -16,8 +22,8 @@ exports.notifyOnPickedReservation = functions.database.ref('/users/{uid}/pickedR
         const restaurant = reservation.restaurant;
 
         const notification = {
-                title: "Reservation has been picked up!",
-                body: "Your reservation to " + restaurant + " has been picked up!",
+                title: "Your reservation to " + restaurant + " has been picked",
+                body: "You earned 2 stars!"
             };
         
         return sendNotification(userId, notification)
@@ -31,21 +37,22 @@ exports.notifyOnPickedReservation = functions.database.ref('/users/{uid}/pickedR
 
 
 
+/*
+When a new reservation is published-
+sends notification to user if there is a match
+*/
 exports.notifyOnMatch = functions.database.ref('/reservations/{pushId}')
     .onCreate(event => {
         const reservation = event.data.val();
-        const userIdReservation = reservation.uid;
-        const restaurantReservation = reservation.restaurant;
-        const dateReservation = moment(reservation.date, dateFormat);
-        const numOfPeopleReservation = reservation.numOfPeople;
 		const notificationsPromises = [];
 
-		const minDateStr = dateReservation.clone().subtract(2,'hours').format(dateFormat);
-		const maxDateStr = dateReservation.clone().add(2,'hours').format(dateFormat);
+		const dateReservation = moment(reservation.date, dateFormat);
+		const minDateStr = dateReservation.clone().subtract(flexibleHourDiff,'hours').format(dateFormat);
+		const maxDateStr = dateReservation.clone().add(flexibleHourDiff,'hours').format(dateFormat);
 		
         const notification = {
                 title: "It's a match!",
-                body: "New reservation matching your request was arrived",
+                body: "New reservation matching your request was arrived"
        		};
 
         return admin.database().ref('/notificationRequests')
@@ -62,8 +69,8 @@ exports.notifyOnMatch = functions.database.ref('/reservations/{pushId}')
   						if(!isFlexible) {
 							dateMatch = dateReservation.format(dateFormat) == notificationReq.date;
   						}
-  						const restaurantMatch = restaurantReservation == notificationReq.restaurant;
-  						const numOfPeopleMatch = numOfPeopleReservation == notificationReq.numOfPeople;
+  						const restaurantMatch = reservation.restaurant == notificationReq.restaurant;
+  						const numOfPeopleMatch = reservation.numOfPeople == notificationReq.numOfPeople;
   						const result = dateMatch && restaurantMatch && numOfPeopleMatch;
   						if(result){
   							console.log("found a match! , reservation of userId: ", userId);
@@ -83,27 +90,53 @@ exports.notifyOnMatch = functions.database.ref('/reservations/{pushId}')
 
 
 
-exports.moveReservationsToHistoryCron = functions.https.onRequest((req,res) => {
-
-	const latestDateToMove = moment().add(2,'hours').add(30,'minutes').format(dateFormat); //2 hours difference between server to local time
-	console.log("Moving to history reservations before: ", latestDateToMove);
-
-	return moveOldItemsToHistory('/reservations', '/historyReservations', latestDateToMove)
+/*
+If no one picked a reservation (the date field is 2 hours or less from current time),
+sends a notification and move it to history
+Running every 15 minutes
+*/
+exports.notifyAndMoveToHistoryReservationsCron = functions.https.onRequest((req,res) => {
+	const latestDateToNotify = moment().add(4,'hours').format(dateFormat); //2 hours difference between server to local time
+	const notificationPromises = [];
+	
+	return admin.database().ref('/reservations')
+    			.orderByChild('date')
+    			.endAt(latestDateToNotify)
+    			.once('value')
+    			.then(snapshot => {
+    				snapshot.forEach(reservationSnap => {
+    					const reservation = reservationSnap.val();
+  						const notification = {
+                			title: "Your reservation to " + reservation.restaurant + " Didn't picked",
+                			body: "Don't forget to notify the restaurant you will not come"
+            			};
+  						notificationPromises.push(sendNotification(reservation.uid, notification));
+					});
+					console.log("Send notifications...");
+					return Promise.all(notificationPromises)
+				})
+				.then(results => {
+					return moveOldItemsToHistory('/reservations', '/historyReservations', latestDateToNotify);
+                })
 				.then(results => {
 					res.send('OK');
-                    console.log("moveReservationsToHistoryCron Successfully finished");
+                    console.log("notifyAndMoveToHistoryCron Successfully finished");
                 })
                 .catch(error => {
                 	res.send(error);
-                    console.log("moveReservationsToHistoryCron finished with error:", error);
+                    console.log("notifyAndMoveToHistoryCron finished with error:", error);
                 });
 });
 
 
 
+/*
+Move to history notification requests
+Running once a day
+*/
 exports.moveNotificationRequestsToHistoryCron = functions.https.onRequest((req,res) => {
 
-	const latestDateToMove = moment().add(2,'hours').add(30,'minutes').format(dateFormat); //2 hours difference between server to local time
+	const latestDateToMove = moment().add(2,'hours').subtract(flexibleHourDiff,'hours').format(dateFormat); //2 hours difference between server to local time
 	const promises = [];
 	console.log("Moving to history notification requests before: ", latestDateToMove);
 
