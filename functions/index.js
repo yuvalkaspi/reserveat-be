@@ -153,6 +153,49 @@ exports.moveNotificationRequestsToHistoryCron = functions.https.onRequest((req,r
 
 
 
+/*
+If latestDateToRemove < current time => decrease num of stars and update latestDateToRemove to month later (if there are more stars)
+*/
+exports.removeStarsCron = functions.https.onRequest((req,res) => {
+
+	const latestDateToRemove = moment().add(2,'hours').format(dateFormat); //2 hours difference between server to local time
+	const promises = [];
+
+	return admin.database().ref('/users')
+    			.orderByChild('removeStarDate')
+    			.endAt(latestDateToRemove)
+    			.once('value')
+    			.then(snapshot => {
+    				snapshot.forEach(userSnap => {
+  						const user = userSnap.val();
+  						const numOfStars = user.stars;
+  						const userId = userSnap.key;
+  						if(numOfStars > 0){
+  							if(numOfStars == 1){
+								promises.push(admin.database().ref('/users/' + userId + '/removeStarDate').set(null));
+  							}
+  							else{
+  								const updatedRemoveStarDate = moment(user.removeStarDate, dateFormat).add(1,'months').format(dateFormat);
+  								promises.push(admin.database().ref('/users/' + userId + '/removeStarDate').set(updatedRemoveStarDate));
+  							}
+  							promises.push(admin.database().ref('/users/' + userId + '/stars').set(numOfStars-1));
+  						}
+  					});
+  					console.log("Num of users that lost a star: ", promises.length/2);
+					return Promise.all(promises);
+				})
+				.then(results => {
+					res.send('OK');
+                    console.log("removeStarsCron Successfully finished");
+                })
+                .catch(error => {
+                	res.send(error);
+                    console.log("removeStarsCron finished with error:", error);
+                });
+});
+
+
+
 
 const moveOldItemsToHistory = (refToRemove, refToAdd, latestDateToMove) => {
 
