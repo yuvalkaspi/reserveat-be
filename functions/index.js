@@ -162,7 +162,7 @@ exports.removeStarsCron = functions.https.onRequest((req,res) => {
 	const promises = [];
 
 	return admin.database().ref('/users')
-    			.orderByChild('removeStarDate')
+    			.orderByChild('starRemoveDate')
     			.endAt(latestDateToRemove)
     			.once('value')
     			.then(snapshot => {
@@ -172,11 +172,11 @@ exports.removeStarsCron = functions.https.onRequest((req,res) => {
   						const userId = userSnap.key;
   						if(numOfStars > 0){
   							if(numOfStars == 1){
-								promises.push(admin.database().ref('/users/' + userId + '/removeStarDate').set(null));
+								promises.push(admin.database().ref('/users/' + userId + '/starRemoveDate').set(null));
   							}
   							else{
-  								const updatedRemoveStarDate = moment(user.removeStarDate, dateFormat).add(1,'months').format(dateFormat);
-  								promises.push(admin.database().ref('/users/' + userId + '/removeStarDate').set(updatedRemoveStarDate));
+  								const updatedRemoveStarDate = moment(user.starRemoveDate, dateFormat).add(1,'months').format(dateFormat);
+  								promises.push(admin.database().ref('/users/' + userId + '/starRemoveDate').set(updatedRemoveStarDate));
   							}
   							promises.push(admin.database().ref('/users/' + userId + '/stars').set(numOfStars-1));
   						}
