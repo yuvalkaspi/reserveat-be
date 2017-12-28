@@ -10,6 +10,13 @@ const moment = require('moment');
 const dateFormat = "YYYY/MM/DD HH:mm";
 const flexibleHourDiff = 2;
 
+const warmResHotness = [7];
+
+const hotResHotness = [7,8];
+
+const boiligHotResHotness = [7,8,9,10];
+
+
 
 
 /*
@@ -195,6 +202,78 @@ exports.removeStarsCron = functions.https.onRequest((req,res) => {
 });
 
 
+/*
+Sends notifications to users with stars upon arrival of hot reservations
+*/
+exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
+    .onCreate(event => {
+        const reservation = event.data.val();
+
+        if (boiligHotResHotness.indexOf(reservation.hotness) > -1){
+        	const notification = {
+            	title: "Hot reservation was arrived!",
+                body: "Reservation to " + reservation.restaurant + " at " + reservation.date
+            };
+        	const warmReservations = [];
+			const hotReservations = [];
+			const boiligHotReservations = [];
+
+			boiligHotReservations.push(notification);
+
+			if (hotResHotness.indexOf(reservation.hotness) > -1){
+				hotReservations.push(notification);
+
+				if (warmResHotness.indexOf(reservation.hotness) > -1){
+					warmReservations.push(notification);
+				}
+			}
+
+			return hotReservationsNotification(warmReservations, hotReservations, boiligHotReservations)
+				.then(results => {
+                    console.log("notifyHotReservations Successfully finished");
+                })
+                .catch(error => {
+                    console.log("notifyHotReservations finished with error:", error);
+                });
+        }
+
+        return Promise.resolve("notifyHotReservations Successfully finished");
+        
+    });
+
+
+
+const hotReservationsNotification = (warmReservations, hotReservations, boiligHotReservations) => {
+
+	const notificationPromises = [];
+
+	return admin.database().ref('/users')
+    			.orderByChild('stars')
+    			.startAt(1)
+    			.once('value')
+    			.then(snapshot => {
+    				snapshot.forEach(userSnap => {
+  						const user = userSnap.val();
+  						const userId = userSnap.key;
+  						if(user.stars == 1){
+  							warmReservations.forEach(notificationMessage => {
+  								notificationPromises.push(sendNotification(userId, notificationMessage))
+  							});
+  						}
+  						if(user.stars == 2){
+  							hotReservations.forEach(notificationMessage => {
+  								notificationPromises.push(sendNotification(userId, notificationMessage))
+  							});
+  						}
+  						if(user.stars == 3){
+  							boiligHotReservations.forEach(notificationMessage => {
+  								notificationPromises.push(sendNotification(userId, notificationMessage))
+  							});
+  						}
+  					});
+					return Promise.all(notificationPromises);
+				})	
+};
 
 
 const moveOldItemsToHistory = (refToRemove, refToAdd, latestDateToMove) => {
