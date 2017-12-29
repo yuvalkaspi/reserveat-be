@@ -9,11 +9,8 @@ const moment = require('moment');
 
 const dateFormat = "YYYY/MM/DD HH:mm";
 const flexibleHourDiff = 2;
-
 const warmResHotness = [7];
-
 const hotResHotness = [7,8];
-
 const boiligHotResHotness = [7,8,9,10];
 
 
@@ -28,12 +25,11 @@ exports.notifyOnPickedReservation = functions.database.ref('/users/{uid}/pickedR
         const userId = reservation.uid;
         const restaurant = reservation.restaurant;
 
-        const notification = {
-                title: "Your reservation to " + restaurant + " has been picked",
-                body: "You earned 2 stars!"
-            };
-        
-        return sendNotification(userId, notification)
+        const title = "Your reservation to " + restaurant + " has been picked";
+        const body = "You earned 2 stars!";
+       	const payload = createPayload(title, body, {});
+   
+        return sendNotification(userId, payload)
             	.then(results => {
                     console.log("notifyOnPickedReservation Successfully finished");
                 })
@@ -53,35 +49,38 @@ exports.notifyOnMatch = functions.database.ref('/reservations/{pushId}')
         const reservation = event.data.val();
 		const notificationsPromises = [];
 
-		const dateReservation = moment(reservation.date, dateFormat);
-		const minDateStr = dateReservation.clone().subtract(flexibleHourDiff,'hours').format(dateFormat);
-		const maxDateStr = dateReservation.clone().add(flexibleHourDiff,'hours').format(dateFormat);
-		
-        const notification = {
-                title: "It's a match!",
-                body: "New reservation matching your request was arrived"
-       		};
+       	const title = "New reservation matching your request was arrived";
+        const body = "Reservation to " + reservation.restaurant + " at " + reservation.date;
+        const data = {
+        	reservationId: event.params.pushId
+       	};
+       	const payload = createPayload(title, body, data);
 
         return admin.database().ref('/notificationRequests')
-    			.orderByChild('date')
-    			.startAt(minDateStr)
-    			.endAt(maxDateStr)
+    			.orderByChild('numOfPeople')
+    			.equalTo(reservation.numOfPeople)
     			.once('value')
     			.then(snapshot => {
     				snapshot.forEach(notificationReqSnap => {
   						const notificationReq = notificationReqSnap.val();
   						const userId = notificationReq.uid;
   						const isFlexible = notificationReq.isFlexible;
-  						const dateMatch = true;
-  						if(!isFlexible) {
-							dateMatch = dateReservation.format(dateFormat) == notificationReq.date;
+
+  						let dateMatch = reservation.date == notificationReq.date || notificationReq.date == "";
+  						if(isFlexible && !dateMatch) {
+  							const dateReservation = moment(reservation.date, dateFormat);
+							const minDateStr = dateReservation.clone().subtract(flexibleHourDiff,'hours').format(dateFormat);
+							const maxDateStr = dateReservation.clone().add(flexibleHourDiff,'hours').format(dateFormat);
+  							dateMatch = notificationReq.date > minDateStr && notificationReq.date < maxDateStr;
   						}
-  						const restaurantMatch = reservation.restaurant == notificationReq.restaurant;
-  						const numOfPeopleMatch = reservation.numOfPeople == notificationReq.numOfPeople;
-  						const result = dateMatch && restaurantMatch && numOfPeopleMatch;
+
+  						const restaurantMatch = reservation.restaurant == notificationReq.restaurant || notificationReq.restaurant == "";
+  						const branchMatch = reservation.branch == notificationReq.branch || notificationReq.branch == "";
+  						const result = dateMatch && restaurantMatch && branchMatch;
   						if(result){
-  							console.log("found a match! , reservation of userId: ", userId);
-  							notificationsPromises.push(sendNotification(userId, notification));
+  							console.log("found a match , reservation of userId: ", userId);
+
+  							notificationsPromises.push(sendNotification(userId, payload));
   						}
 					});
 					return Promise.all(notificationsPromises)
@@ -113,11 +112,12 @@ exports.notifyAndMoveToHistoryReservationsCron = functions.https.onRequest((req,
     			.then(snapshot => {
     				snapshot.forEach(reservationSnap => {
     					const reservation = reservationSnap.val();
-  						const notification = {
-                			title: "Your reservation to " + reservation.restaurant + " Didn't picked",
-                			body: "Don't forget to notify the restaurant you will not come"
-            			};
-  						notificationPromises.push(sendNotification(reservation.uid, notification));
+
+            			const title = "Your reservation to " + reservation.restaurant + " Didn't picked";
+        				const body = "Don't forget to notify the restaurant you will not arrive";
+       					const payload = createPayload(title, body, {});
+
+  						notificationPromises.push(sendNotification(reservation.uid, payload));
 					});
 					console.log("Send notifications...");
 					return Promise.all(notificationPromises)
@@ -210,21 +210,25 @@ exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
         const reservation = event.data.val();
 
         if (boiligHotResHotness.indexOf(reservation.hotness) > -1){
-        	const notification = {
-            	title: "Hot reservation was arrived!",
-                body: "Reservation to " + reservation.restaurant + " at " + reservation.date
-            };
+
+        	const title = "Hot reservation was arrived!";
+        	const body = "Reservation to " + reservation.restaurant + " at " + reservation.date;
+        	const data = {
+                reservationId: event.params.pushId
+       		};
+            const payload = createPayload(title, body, data);
+        	
         	const warmReservations = [];
 			const hotReservations = [];
 			const boiligHotReservations = [];
 
-			boiligHotReservations.push(notification);
+			boiligHotReservations.push(payload);
 
 			if (hotResHotness.indexOf(reservation.hotness) > -1){
-				hotReservations.push(notification);
+				hotReservations.push(payload);
 
 				if (warmResHotness.indexOf(reservation.hotness) > -1){
-					warmReservations.push(notification);
+					warmReservations.push(payload);
 				}
 			}
 
@@ -256,18 +260,18 @@ const hotReservationsNotification = (warmReservations, hotReservations, boiligHo
   						const user = userSnap.val();
   						const userId = userSnap.key;
   						if(user.stars == 1){
-  							warmReservations.forEach(notificationMessage => {
-  								notificationPromises.push(sendNotification(userId, notificationMessage))
+  							warmReservations.forEach(payload => {
+  								notificationPromises.push(sendNotification(userId, payload))
   							});
   						}
   						if(user.stars == 2){
-  							hotReservations.forEach(notificationMessage => {
-  								notificationPromises.push(sendNotification(userId, notificationMessage))
+  							hotReservations.forEach(payload => {
+  								notificationPromises.push(sendNotification(userId, payload))
   							});
   						}
   						if(user.stars == 3){
-  							boiligHotReservations.forEach(notificationMessage => {
-  								notificationPromises.push(sendNotification(userId, notificationMessage))
+  							boiligHotReservations.forEach(payload => {
+  								notificationPromises.push(sendNotification(userId, payload))
   							});
   						}
   					});
@@ -299,10 +303,7 @@ const moveOldItemsToHistory = (refToRemove, refToAdd, latestDateToMove) => {
 
 
 
-const sendNotification = (userId, notification) => {
-
-	 const payload = {} ;
-	 payload['notification'] = notification;
+const sendNotification = (userId, payload) => {
 
 	return admin.database().ref(`/users/${userId}/instanceId`)
         		.once('value')
@@ -313,7 +314,16 @@ const sendNotification = (userId, notification) => {
 };
 
 
+const createPayload = (titleStr, bodyStr, dataObj) => {
 
+	const payload = {};
+	payload['notification'] = {
+		title: titleStr,
+		body: bodyStr
+	}
+	payload['data'] = dataObj;
+	return payload;
+};
 
 
 
