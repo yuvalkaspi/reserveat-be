@@ -39,6 +39,43 @@ exports.notifyOnPickedReservation = functions.database.ref('/users/{uid}/pickedR
     });
 
 
+/*
+Spam handle Sends notification to user which was reported spammer
+*/
+exports.notifyOnReportedSpammer = functions.database.ref('/users/{uid}/spamReports')
+    .onWrite(event => {
+        const userId = event.params.uid;
+        const numOfReports = event.data.val();
+        const title = "Your reservation was reported as spam" ;
+        let body;
+
+		switch (numOfReports) {
+		    case 1:
+		        body = "warning: next time your stars will be lost";
+		        break;
+		    case 2:
+		        body = "warning: next time you will be blocked";
+		        admin.database().ref('/users/' + userId + '/stars').set(0);
+		        admin.database().ref("/users/" + userId + "/starRemoveDate").set(null);
+		        break;
+		    case 3:
+		        body = "You are blocked from our app";
+				admin.auth().updateUser(userId,{
+			  		disabled: true
+				})
+		        break;
+		}
+   
+        return sendNotification(userId, createPayload(title, body, {}))
+            	.then(results => {
+                    console.log("notifyOnReportedSpammer Successfully finished");
+                })
+                .catch(error => {
+                    console.log("notifyOnReportedSpammer finished with error:", error);
+                });
+    });
+
+
 
 /*
 When a new reservation is published-
