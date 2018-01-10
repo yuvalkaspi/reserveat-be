@@ -293,35 +293,6 @@ exports.statisticsCron = functions.https.onRequest((req,res) => {
 
 
 
-const increaseDayCount = (day) => {
-
-	return admin.database().ref('/statistics/totalNumOfDays/' + day)
-    			.once('value')
-    			.then(snapshot => {
-    				let dayCount = 0;
-    				if(snapshot.exists()){
-    					dayCount = snapshot.val();
-    				}
-  					return snapshot.ref.set(dayCount + 1);
-    		})
-};
-
-
-const increaseResCount = (placeId, day, timeOfDay) => {
-
-	return admin.database().ref('/statistics/' + placeId + '/' + day + '/' + timeOfDay)
-    			.once('value')
-    			.then(snapshot => {
-    				let reservationCount = 0;
-    				if(snapshot.exists()){
-    					reservationCount = snapshot.val();
-    				}
-  					return snapshot.ref.set(reservationCount + 1);
-    		})
-};
-
-
-
 /*
 Sends notifications to users with stars upon arrival of hot reservations
 */
@@ -367,6 +338,32 @@ exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
     });
 
 
+const increaseDayCount = (day) => {
+
+	return admin.database().ref('/statistics/totalNumOfDays/' + day)
+    			.once('value')
+    			.then(snapshot => {
+    				let dayCount = 0;
+    				if(snapshot.exists()){
+    					dayCount = snapshot.val();
+    				}
+  					return snapshot.ref.set(dayCount + 1);
+    		})
+};
+
+
+const increaseResCount = (placeId, day, timeOfDay) => {
+
+	return admin.database().ref('/statistics/' + placeId + '/' + day + '/' + timeOfDay)
+    			.once('value')
+    			.then(snapshot => {
+    				let reservationCount = 0;
+    				if(snapshot.exists()){
+    					reservationCount = snapshot.val();
+    				}
+  					return snapshot.ref.set(reservationCount + 1);
+    		})
+};
 
 const hotReservationsNotification = (warmReservations, hotReservations, boiligHotReservations) => {
 
