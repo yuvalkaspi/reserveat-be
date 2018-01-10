@@ -9,6 +9,7 @@ const moment = require('moment');
 
 const dateFormat = "YYYY/MM/DD HH:mm";
 const dateFormatUser = "DD/MM/YYYY HH:mm";
+const dateFormatOnlyDay = "dddd";
 const flexibleHourDiff = 2;
 const warmResHotness = [7];
 const hotResHotness = [7,8];
@@ -244,6 +245,84 @@ exports.removeStarsCron = functions.https.onRequest((req,res) => {
 
 
 /*
+Updates statistics about last day reservations.
+*/
+exports.statisticsCron = functions.https.onRequest((req,res) => {
+
+	const yesterday = moment().add(2,'hours').subtract(1,'days');
+	const startOfDayYesterday = yesterday.startOf('day').format(dateFormat); //2 hours difference between server to local time
+	const endOfDayYesterday = yesterday.endOf('day').format(dateFormat);
+	const dayYesterday = yesterday.format(dateFormatOnlyDay).toUpperCase();
+
+	console.log("startOfDayYesterday: " + startOfDayYesterday);
+	console.log("endOfDayYesterday: " + endOfDayYesterday);
+	console.log("dayYesterday: " + dayYesterday);
+
+	
+	const increaseResCountPromises = [];
+
+	return admin.database().ref('/historyReservations')
+    			.orderByChild('date')
+    			.startAt(startOfDayYesterday)
+    			.endAt(endOfDayYesterday)
+    			.once('value')
+    			.then(snapshot => {
+    				snapshot.forEach(reservationSnap => {
+  						const reservation = reservationSnap.val();
+  						const placeId = reservation.placeId;
+  						const day = reservation.day;
+  						const timeOfDay = reservation.timeOfDay;
+  						increaseResCountPromises.push(increaseResCount(placeId, day, timeOfDay));
+  					});
+  					return Promise.all(increaseResCountPromises);
+  				})
+  				.then(results => {
+  					return increaseDayCount(dayYesterday);
+                })
+				.then(results => {
+					res.send('OK');
+                    console.log("statisticsCron Successfully finished");
+                })
+                .catch(error => {
+                	res.send(error);
+                    console.log("statisticsCron finished with error:", error);
+                });
+
+});
+
+
+
+
+const increaseDayCount = (day) => {
+
+	return admin.database().ref('/statistics/totalNumOfDays/' + day)
+    			.once('value')
+    			.then(snapshot => {
+    				let dayCount = 0;
+    				if(snapshot.exists()){
+    					dayCount = snapshot.val();
+    				}
+  					return snapshot.ref.set(dayCount + 1);
+    		})
+};
+
+
+const increaseResCount = (placeId, day, timeOfDay) => {
+
+	return admin.database().ref('/statistics/' + placeId + '/' + day + '/' + timeOfDay)
+    			.once('value')
+    			.then(snapshot => {
+    				let reservationCount = 0;
+    				if(snapshot.exists()){
+    					reservationCount = snapshot.val();
+    				}
+  					return snapshot.ref.set(reservationCount + 1);
+    		})
+};
+
+
+
+/*
 Sends notifications to users with stars upon arrival of hot reservations
 */
 exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
@@ -336,7 +415,7 @@ const matchedNotification = (reservation, reservationKey, notificationReq, title
   	const branchMatch = reservation.branch == notificationReq.branch || notificationReq.branch == "";
   	const result = dateMatch && restaurantMatch && branchMatch;
   	if(result){
-  		console.log("found a match , notification request of userId: " + notificationReq.id);
+  		console.log("found a match , notification request of userId: " + notificationReq.uid);
   		const title = titleStr;
   		const dateUser = moment(reservation.date, dateFormat).format(dateFormatUser);
    		const body = "Reservation to " + reservation.restaurant + " at " + dateUser;
@@ -378,6 +457,7 @@ const sendNotification = (userId, payload) => {
         		.once('value')
         		.then(result => {
             		const instanceId = result.val();
+            		console.log("Sending notification...");
             		return admin.messaging().sendToDevice(instanceId, payload);
             	})
 };
