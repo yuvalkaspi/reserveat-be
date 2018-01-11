@@ -32,7 +32,7 @@ exports.notifyOnPickedReservation = functions.database.ref('/users/{uid}/pickedR
    
         return sendNotification(userId, createPayload(title, body, {}))
             	.then(results => {
-                    console.log("notifyOnPickedReservation Successfully finished");
+                    console.log("notifyOnPickedReservation successfully finished");
                 })
                 .catch(error => {
                     console.log("notifyOnPickedReservation finished with error:", error);
@@ -69,7 +69,7 @@ exports.notifyOnReportedSpammer = functions.database.ref('/users/{uid}/spamRepor
    
         return sendNotification(userId, createPayload(title, body, {}))
             	.then(results => {
-                    console.log("notifyOnReportedSpammer Successfully finished");
+                    console.log("notifyOnReportedSpammer successfully finished");
                 })
                 .catch(error => {
                     console.log("notifyOnReportedSpammer finished with error:", error);
@@ -99,7 +99,7 @@ exports.notifyOnNewMatch = functions.database.ref('/reservations/{pushId}')
 					return Promise.all(notificationsPromises)
 				})
 				.then(results => {
-                    console.log("notifyOnNewMatch Successfully finished");
+                    console.log("notifyOnNewMatch successfully finished");
                 })
                 .catch(error => {
                     console.log("notifyOnNewMatch finished with error:", error);
@@ -130,7 +130,7 @@ exports.notifyOnExistsMatch = functions.database.ref('/notificationRequests/{pus
 					return Promise.all(notificationsPromises)
 				})
 				.then(results => {
-                    console.log("notifyOnExistsMatch Successfully finished");
+                    console.log("notifyOnExistsMatch successfully finished");
                 })
                 .catch(error => {
                     console.log("notifyOnExistsMatch finished with error:", error);
@@ -169,7 +169,7 @@ exports.notifyAndMoveToHistoryReservationsCron = functions.https.onRequest((req,
                 })
 				.then(results => {
 					res.send('OK');
-                    console.log("notifyAndMoveToHistoryCron Successfully finished");
+                    console.log("notifyAndMoveToHistoryCron successfully finished");
                 })
                 .catch(error => {
                 	res.send(error);
@@ -192,7 +192,7 @@ exports.moveNotificationRequestsToHistoryCron = functions.https.onRequest((req,r
 	return moveOldItemsToHistory('/notificationRequests', 'historyNotificationRequests', latestDateToMove)
 				.then(results => {
 					res.send('OK');
-                    console.log("moveNotificationRequestsToHistoryCron Successfully finished");
+                    console.log("moveNotificationRequestsToHistoryCron successfully finished");
                 })
                 .catch(error => {
                 	res.send(error);
@@ -235,7 +235,7 @@ exports.removeStarsCron = functions.https.onRequest((req,res) => {
 				})
 				.then(results => {
 					res.send('OK');
-                    console.log("removeStarsCron Successfully finished");
+                    console.log("removeStarsCron successfully finished");
                 })
                 .catch(error => {
                 	res.send(error);
@@ -258,8 +258,8 @@ exports.statisticsCron = functions.https.onRequest((req,res) => {
 	console.log("endOfDayYesterday: " + endOfDayYesterday);
 	console.log("dayYesterday: " + dayYesterday);
 
-	
 	const increaseResCountPromises = [];
+	const countRes = {};
 
 	return admin.database().ref('/historyReservations')
     			.orderByChild('date')
@@ -269,11 +269,37 @@ exports.statisticsCron = functions.https.onRequest((req,res) => {
     			.then(snapshot => {
     				snapshot.forEach(reservationSnap => {
   						const reservation = reservationSnap.val();
-  						const placeId = reservation.placeId;
-  						const day = reservation.day;
-  						const timeOfDay = reservation.timeOfDay;
-  						increaseResCountPromises.push(increaseResCount(placeId, day, timeOfDay));
+  						if(reservation.isSpam == false){
+  							console.log("Adding to statistics reservationId:" + reservationSnap.key);
+  							const placeId = reservation.placeId;
+  							const day = reservation.day;
+  							const timeOfDay = reservation.timeOfDay;
+
+  							if (typeof countRes[placeId] === "undefined"){
+  								countRes[placeId] = {};
+  							}
+  							if (typeof countRes[placeId][day] === "undefined"){
+  								countRes[placeId][day] = {};
+  							}
+
+  							if (typeof countRes[placeId][day][timeOfDay] === "undefined"){
+  								countRes[placeId][day][timeOfDay] = 1;
+  							} else{
+  								countRes[placeId][day][timeOfDay] = countRes[placeId][day][timeOfDay] + 1;
+  							}
+  						}
   					});
+
+  					console.log(countRes);
+
+  					Object.keys(countRes).forEach(placeId => {
+  						Object.keys(countRes[placeId]).forEach(day => {
+  							Object.keys(countRes[placeId][day]).forEach(timeOfDay => {
+  								increaseResCountPromises.push(increaseResCount(placeId, day, timeOfDay, countRes[placeId][day][timeOfDay]));
+  							});
+  						});
+  					});
+
   					return Promise.all(increaseResCountPromises);
   				})
   				.then(results => {
@@ -281,7 +307,7 @@ exports.statisticsCron = functions.https.onRequest((req,res) => {
                 })
 				.then(results => {
 					res.send('OK');
-                    console.log("statisticsCron Successfully finished");
+                    console.log("statisticsCron successfully finished");
                 })
                 .catch(error => {
                 	res.send(error);
@@ -333,7 +359,7 @@ exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
                 });
         }
 
-        return Promise.resolve("notifyHotReservations Successfully finished");
+        return Promise.resolve("notifyHotReservations successfully finished");
         
     });
 
@@ -352,7 +378,7 @@ const increaseDayCount = (day) => {
 };
 
 
-const increaseResCount = (placeId, day, timeOfDay) => {
+const increaseResCount = (placeId, day, timeOfDay, dayCount) => {
 
 	return admin.database().ref('/statistics/' + placeId + '/' + day + '/' + timeOfDay)
     			.once('value')
@@ -361,7 +387,7 @@ const increaseResCount = (placeId, day, timeOfDay) => {
     				if(snapshot.exists()){
     					reservationCount = snapshot.val();
     				}
-  					return snapshot.ref.set(reservationCount + 1);
+  					return snapshot.ref.set(reservationCount + dayCount);
     		})
 };
 
