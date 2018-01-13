@@ -11,11 +11,6 @@ const dateFormat = "YYYY/MM/DD HH:mm";
 const dateFormatUser = "DD/MM/YYYY HH:mm";
 const dateFormatOnlyDay = "dddd";
 const flexibleHourDiff = 2;
-const warmResHotness = [7];
-const hotResHotness = [7,8];
-const boiligHotResHotness = [7,8,9,10];
-
-
 
 
 /*
@@ -324,33 +319,51 @@ Sends notifications to users with stars upon arrival of hot reservations
 */
 exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
     .onCreate(event => {
+
+    	const minHotnessNotification = 7;
+		const maxWarmResHotness = 7;
+		const maxHotResHotness = 8;
+
         const reservation = event.data.val();
+        if (reservation.hotness >= minHotnessNotification){
 
-        if (boiligHotResHotness.indexOf(reservation.hotness) > -1){
-
-        	const title = "Hot reservation was arrived!";
-        	const dateUser = moment(reservation.date, dateFormat).format(dateFormatUser);
-        	const body = "Reservation to " + reservation.restaurant + " at " + dateUser;
-        	const data = {
-                reservationId: event.params.pushId
-       		};
-            const payload = createPayload(title, body, data);
+        	let title = "Boiling-hot reservation was arrived!";
+        	if(maxWarmResHotness < reservation.hotness  && reservation.hotness <= maxHotResHotness){
+        		title = "Hot reservation was arrived!";
+        	}
+        	if(reservation.hotness <= maxWarmResHotness){
+        		title = "Warm reservation was arrived!";
+        	}
         	
-        	const warmReservations = [];
-			const hotReservations = [];
-			const boiligHotReservations = [];
+        	const dateUser = moment(reservation.date, dateFormat).format(dateFormatUser);
+       		const body = "Reservation to " + reservation.restaurant + " at " + dateUser;
+       		const data = {
+            	reservationId: event.params.pushId
+        	};
+        	const payload = createPayload(title, body, data);
+        	
+        	const notificationPromises = [];
 
-			boiligHotReservations.push(payload);
-
-			if (hotResHotness.indexOf(reservation.hotness) > -1){
-				hotReservations.push(payload);
-
-				if (warmResHotness.indexOf(reservation.hotness) > -1){
-					warmReservations.push(payload);
-				}
-			}
-
-			return hotReservationsNotification(warmReservations, hotReservations, boiligHotReservations)
+        	return admin.database().ref('/users')
+    			.orderByChild('stars')
+    			.startAt(1)
+    			.once('value')
+    			.then(snapshot => {
+    				snapshot.forEach(userSnap => {
+  						const user = userSnap.val();
+  						const userId = userSnap.key;
+  						if(reservation.uid != userId){
+  							if(user.stars == 3){
+  								notificationPromises.push(sendNotification(userId, payload));
+  							}else if(user.stars == 2 && reservation.hotness <= maxHotResHotness){
+								notificationPromises.push(sendNotification(userId, payload));
+  							}else if(reservation.hotness <= maxWarmResHotness){//1 star
+								notificationPromises.push(sendNotification(userId, payload));
+  							}
+  						}
+  					});
+					return Promise.all(notificationPromises);
+				})
 				.then(results => {
                     console.log("notifyHotReservations Successfully finished");
                 })
@@ -358,9 +371,7 @@ exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
                     console.log("notifyHotReservations finished with error:", error);
                 });
         }
-
-        return Promise.resolve("notifyHotReservations successfully finished");
-        
+        return Promise.resolve();
     });
 
 
@@ -391,38 +402,6 @@ const increaseResCount = (placeId, day, timeOfDay, dayCount) => {
     		})
 };
 
-const hotReservationsNotification = (warmReservations, hotReservations, boiligHotReservations) => {
-
-	const notificationPromises = [];
-
-	return admin.database().ref('/users')
-    			.orderByChild('stars')
-    			.startAt(1)
-    			.once('value')
-    			.then(snapshot => {
-    				snapshot.forEach(userSnap => {
-  						const user = userSnap.val();
-  						const userId = userSnap.key;
-  						if(user.stars == 1){
-  							warmReservations.forEach(payload => {
-  								notificationPromises.push(sendNotification(userId, payload))
-  							});
-  						}
-  						if(user.stars == 2){
-  							hotReservations.forEach(payload => {
-  								notificationPromises.push(sendNotification(userId, payload))
-  							});
-  						}
-  						if(user.stars == 3){
-  							boiligHotReservations.forEach(payload => {
-  								notificationPromises.push(sendNotification(userId, payload))
-  							});
-  						}
-  					});
-					return Promise.all(notificationPromises);
-				})	
-};
-
 
 const matchedNotification = (reservation, reservationKey, notificationReq, titleStr) => {
 
@@ -434,9 +413,10 @@ const matchedNotification = (reservation, reservationKey, notificationReq, title
   		dateMatch = notificationReq.date > minDateStr && notificationReq.date < maxDateStr;
   	}
 
+  	const myReservation = reservation.uid == notificationReq.uid;
   	const restaurantMatch = reservation.restaurant == notificationReq.restaurant || notificationReq.restaurant == "";
   	const branchMatch = reservation.branch == notificationReq.branch || notificationReq.branch == "";
-  	const result = dateMatch && restaurantMatch && branchMatch;
+  	const result = dateMatch && restaurantMatch && branchMatch && notificationReq.isActive && !myReservation;
   	if(result){
   		console.log("found a match , notification request of userId: " + notificationReq.uid);
   		const title = titleStr;
