@@ -63,6 +63,7 @@ exports.notifyOnReportedSpammer = functions.database.ref('/users/{uid}/spamRepor
 				admin.auth().updateUser(userId,{
 			  		disabled: true
 				})
+				admin.auth()
 		        break;
 		}
    
@@ -74,6 +75,67 @@ exports.notifyOnReportedSpammer = functions.database.ref('/users/{uid}/spamRepor
                     console.log("notifyOnReportedSpammer finished with error:", error);
                 });
     });
+
+
+
+
+exports.updateReservationHottnessRate = functions.database.ref('/reviews/{placeId}/{day}/{timeOfDay}/hottnesRate').onWrite( event => { 
+	
+	const resPlaceId = event.params.placeId;
+  	const resDay = event.params.day;
+  	const resTimeOfDay = event.params.timeOfDay;
+  	const hottnessRate = event.data.val();
+  	const promises = [];
+  	console.log("start updateReservationHottnessRate hottnessRate:", hottnessRate);
+
+  	return admin.database().ref("/reservations").orderByChild("placeId").equalTo(resPlaceId)
+  												.once('value').then(snapshot => {
+  		snapshot.forEach(reservation => {
+  			var currResDay = reservation.child("day").val();
+  			var currResTimeOfDay = reservation.child("timeOfDay").val();
+  			if(resDay == currResDay && resTimeOfDay == currResTimeOfDay ){
+	     		promises.push(admin.database().ref('/reservations/' + reservation.key +  '/hotness' ).set(hottnessRate));
+	     		console.log("updateReservationHottnessRate new hottnessRate for:", reservation.key);
+     		}
+     	});
+
+     	return Promise.all(promises);
+	});
+});
+
+
+
+exports.calculateHottnessRate = functions.database.ref('/reviews/{placeId}/{day}/{timeOfDay}/{pushId}').onCreate( event => { 
+	const resPlaceId = event.params.placeId;
+	const promises = [];
+  	const resDay = event.params.day;
+  	const resTimeOfDay = event.params.timeOfDay;
+  	let hottnessRate = 0;
+  	let sumOfReliability = 0;
+  	return admin.database().ref("/reviews/" + "/" + resPlaceId + "/" + resDay + "/" + resTimeOfDay).orderByKey().once('value').then(snapshot => {
+
+  		snapshot.forEach(review => {
+     		var userId = review.child("userId").val();
+     		var userRef = admin.database().ref("/users/" + userId + "/reliability");
+     		let reliability = 0
+     		return userRef.orderByKey().once('value').then(snapshot => {
+     			
+     			reliability = snapshot.val();
+     			var busyRate = review.child("busyRate").val();
+      			var rate =review.child("rate").val();
+
+      			hottnessRate += (reliability / 20) * ((0.6 * busyRate) + (0.4 * rate));
+      			sumOfReliability += (reliability / 20);
+   	    		hottnessRate = hottnessRate / sumOfReliability;
+  				promises.push(admin.database().ref('/reviews/' + resPlaceId +  '/' + resDay + '/' + resTimeOfDay +  '/' + "hottnesRate").set(hottnessRate));
+  				console.log("push hottnessRate: " + hottnessRate + "for: " + "/reviews/" + resPlaceId +  '/' + resDay + '/' + resTimeOfDay);
+     		});
+
+     	});
+
+     	return Promise.all(promises);
+	});
+});
 
 
 
@@ -196,6 +258,35 @@ exports.moveNotificationRequestsToHistoryCron = functions.https.onRequest((req,r
                 .catch(error => {
                 	res.send(error);
                     console.log("moveNotificationRequestsToHistoryCron finished with error:", error);
+                });
+});
+
+
+/*
+zero number of uploads this month
+Running once a mounth
+*/
+exports.zeroNumOfUploads = functions.https.onRequest((req,res) => {
+
+	const promises = [];
+	console.log("Putting zero to uploads: ");
+
+	return admin.database().ref('/users')
+    			.once('value')
+    			.then(snapshot => {
+    				snapshot.forEach(userSnap => {
+  						const userId = userSnap.key;
+  						promises.push(admin.database().ref('/users/' + userId + '/uploadsThisMonth').set(0));
+  					});
+					return Promise.all(promises);
+				})
+				.then(results => {
+					res.send('OK');
+                    console.log("zeroNumOfUploads finished Successfully");
+                })
+                .catch(error => {
+                	res.send(error);
+                    console.log("zeroNumOfUploads finished with error:", error);
                 });
 });
 
