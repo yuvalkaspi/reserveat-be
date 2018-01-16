@@ -119,8 +119,24 @@ exports.calculateHottnessRate = functions.database.ref('/reviews/{placeId}/{day}
      			reliability = snapshot.val();
      			var busyRate = review.child("busyRate").val();
       			var rate =review.child("rate").val();
+      			var wasLine = review.child("wasLine").val();
+      			var needToBookInAdvance =review.child("needToBookInAdvance").val();
+      			
+      			var wasLineRate = 0;
+      			if(wasLine == 1){
+      				wasLineRate = 2.5; 
+      			} else if(wasLine ==3){
+      				wasLineRate  = 1;
+      			}
 
-      			hottnessRate += (reliability / 20) * ((0.6 * busyRate) + (0.4 * rate));
+      			var needToBookInAdvanceRate = 0;
+      			if(needToBookInAdvance == 1){
+      				needToBookInAdvanceRate = 2.5; 
+      			} else if(needToBookInAdvance ==3){
+      				needToBookInAdvanceRate  = 1;
+      			}
+
+      			hottnessRate += (reliability / 20) * ( (busyRate + rate)/2 +  wasLineRate + needToBookInAdvanceRate);
       			sumOfReliability += (reliability / 20);
    	    		hottnessRate = hottnessRate / sumOfReliability;
   				promises.push(admin.database().ref('/reviews/' + resPlaceId +  '/' + resDay + '/' + resTimeOfDay +  '/' + "hottnesRate").set(hottnessRate));
@@ -143,7 +159,7 @@ exports.notifyOnNewMatch = functions.database.ref('/reservations/{pushId}')
     .onCreate(event => {
         const reservation = event.data.val();
 		const notificationsPromises = [];
-       	const title = "New reservation matching your request was arrived";
+       	const title = "We found a reservation you might be interested in";
 
         return admin.database().ref('/notificationRequests')
     			.orderByChild('numOfPeople')
@@ -174,7 +190,7 @@ exports.notifyOnExistsMatch = functions.database.ref('/notificationRequests/{pus
 
         const notificationReq = event.data.val();
 		const notificationsPromises = [];
-       	const title = "Reservation matching your request is exists";
+       	const title = "We found a reservation you might be interested in";
 
         return admin.database().ref('/reservations')
     			.orderByChild('numOfPeople')
