@@ -151,7 +151,7 @@ exports.notifyAndMoveToHistoryReservationsCron = functions.https.onRequest((req,
     				snapshot.forEach(reservationSnap => {
     					const reservation = reservationSnap.val();
 
-            			const title = "Your reservation to " + reservation.restaurant + " Didn't picked";
+            			const title = "Your reservation to " + reservation.restaurant + " wasn't picked";
         				const body = "Don't forget to notify the restaurant you will not arrive";
 
   						notificationPromises.push(sendNotification(reservation.uid, createPayload(title, body, {})));
@@ -341,6 +341,7 @@ exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
             	reservationId: event.params.pushId
         	};
         	const payload = createPayload(title, body, data);
+        	payload['notification']['click_action'] = ".com.reserveat.reserveat.MatchedReservationActivity"
         	
         	const notificationPromises = [];
 
@@ -425,7 +426,9 @@ const matchedNotification = (reservation, reservationKey, notificationReq, title
     	const data = {
     		reservationId: reservationKey
     	};
-  		return sendNotification(notificationReq.uid, createPayload(title, body, data));
+    	const payload = createPayload(title, body, data);
+    	payload['notification']['click_action'] = ".com.reserveat.reserveat.MatchedReservationActivity"
+  		return sendNotification(notificationReq.uid, payload);
   	}
   	return Promise.resolve();
 };
