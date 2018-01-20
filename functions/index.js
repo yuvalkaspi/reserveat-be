@@ -129,8 +129,8 @@ exports.calculateHottnessRate = functions.database.ref('/reviews/{placeId}/{day}
   			let sumOfReliability = 0;
 
 	  		results.forEach(reviewHotness => {
-	  			hottnessRate += reviewHotness.reliability/20 * reviewHotness.hotness
-	  			sumOfReliability += reviewHotness.reliability/20
+	  			hottnessRate += reviewHotness.reliability * reviewHotness.hotness
+	  			sumOfReliability += reviewHotness.reliability
 	     	});
 
 	     	hottnessRate = hottnessRate / sumOfReliability;
