@@ -100,53 +100,48 @@ exports.updateReservationHottnessRate = functions.database.ref('/reviews/{placeI
 });
 
 
+/*
+On create of review, recalculate reservation's hotness 
+*/
+exports.calculateHottnessRate = functions.database.ref('/reviews/{placeId}/{day}/{timeOfDay}/{pushId}').onCreate( event => {
 
-exports.calculateHottnessRate = functions.database.ref('/reviews/{placeId}/{day}/{timeOfDay}/{pushId}').onCreate( event => { 
+	if(event.params.pushId == "hottnesRate"){
+		return Promise.resolve();
+	}
+
 	const resPlaceId = event.params.placeId;
 	const promises = [];
   	const resDay = event.params.day;
   	const resTimeOfDay = event.params.timeOfDay;
-  	let hottnessRate = 0;
-  	let sumOfReliability = 0;
-  	return admin.database().ref("/reviews/" + "/" + resPlaceId + "/" + resDay + "/" + resTimeOfDay).orderByKey().once('value').then(snapshot => {
+  	return admin.database().ref("/reviews/" + resPlaceId + "/" + resDay + "/" + resTimeOfDay)
+  		.once('value')
+  		.then(snapshot => {
+	  		snapshot.forEach(reviewSnap => {
+	  			if (reviewSnap.key != "hottnesRate"){
+	  				promises.push(calculateReviewHotness(reviewSnap.val()));
+	  			}
+	  			
+	     	});
+	     	return Promise.all(promises);
+		})
+		.then(results => {
+			let hottnessRate = 0;
+  			let sumOfReliability = 0;
 
-  		snapshot.forEach(review => {
-     		var userId = review.child("userId").val();
-     		var userRef = admin.database().ref("/users/" + userId + "/reliability");
-     		let reliability = 0
-     		return userRef.orderByKey().once('value').then(snapshot => {
-     			
-     			reliability = snapshot.val();
-     			var busyRate = review.child("busyRate").val();
-      			var rate =review.child("rate").val();
-      			var wasLine = review.child("wasLine").val();
-      			var needToBookInAdvance =review.child("needToBookInAdvance").val();
-      			
-      			var wasLineRate = 0;
-      			if(wasLine == 1){
-      				wasLineRate = 2.5; 
-      			} else if(wasLine ==3){
-      				wasLineRate  = 1;
-      			}
+	  		results.forEach(reviewHotness => {
+	  			hottnessRate += reviewHotness.reliability/20 * reviewHotness.hotness
+	  			sumOfReliability += reviewHotness.reliability/20
+	     	});
 
-      			var needToBookInAdvanceRate = 0;
-      			if(needToBookInAdvance == 1){
-      				needToBookInAdvanceRate = 2.5; 
-      			} else if(needToBookInAdvance ==3){
-      				needToBookInAdvanceRate  = 1;
-      			}
-
-      			hottnessRate += (reliability / 20) * ( (busyRate + rate)/2 +  wasLineRate + needToBookInAdvanceRate);
-      			sumOfReliability += (reliability / 20);
-   	    		hottnessRate = hottnessRate / sumOfReliability;
-  				promises.push(admin.database().ref('/reviews/' + resPlaceId +  '/' + resDay + '/' + resTimeOfDay +  '/' + "hottnesRate").set(hottnessRate));
-  				console.log("push hottnessRate: " + hottnessRate + "for: " + "/reviews/" + resPlaceId +  '/' + resDay + '/' + resTimeOfDay);
-     		});
-
-     	});
-
-     	return Promise.all(promises);
-	});
+	     	hottnessRate = hottnessRate / sumOfReliability;
+	     	return admin.database().ref('/reviews/' + resPlaceId +  '/' + resDay + '/' + resTimeOfDay +  '/' + "hottnesRate").set(hottnessRate);
+		})
+		.then(results => {
+	        console.log("calculateHottnessRate successfully finished");
+        })
+        .catch(error => {
+            console.log("calculateHottnessRate finished with error:", error);
+        });
 });
 
 
@@ -481,6 +476,38 @@ exports.notifyHotReservations = functions.database.ref('/reservations/{pushId}')
         }
         return Promise.resolve();
     });
+
+
+
+const calculateReviewHotness = (review) => {
+
+	return admin.database().ref("/users/" + review.userId + "/reliability")
+		.once('value')
+		.then(relabilitySnap => {
+	     	const reliability = relabilitySnap.val();
+	      			
+	      	let wasLineRate = 0;
+	      	if(review.wasLine == 1){
+	      		wasLineRate = 2.5; 
+	      	} else if(review.wasLine ==3){
+	      		wasLineRate  = 1;
+	      	}
+
+	      	let needToBookInAdvanceRate = 0;
+	      	if(review.needToBookInAdvance == 1){
+	      		needToBookInAdvanceRate = 2.5; 
+	      	} else if(review.needToBookInAdvance ==3){
+	      		needToBookInAdvanceRate  = 1;
+	      	}
+
+	     	const hottnessRate = (review.busyRate + review.rate)/2 +  wasLineRate + needToBookInAdvanceRate;
+			const userResult = {};
+	     	userResult['reliability'] = reliability;
+	     	userResult['hotness'] = hottnessRate;
+			console.log("reliability: " + reliability + " hottnessRate: " + hottnessRate);
+	     	return Promise.resolve(userResult);
+	    });
+};
 
 
 const increaseDayCount = (day) => {
